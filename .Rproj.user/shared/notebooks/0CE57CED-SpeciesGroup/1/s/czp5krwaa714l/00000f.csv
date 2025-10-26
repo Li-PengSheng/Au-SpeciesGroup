@@ -1,0 +1,8 @@
+"0","#Drop the imcra and year columns"
+"0","data_2022 <- data_2022 |> dplyr::select(-dplyr::any_of(c(""year"", ""imcra_region"")))"
+"0",""
+"0","# 98% Human observation and drop the basis_of_record column"
+"0","dist_basis <- data_2022 |>dplyr::count(basis_of_record, sort = TRUE) |> dplyr::mutate(prop = round(n / sum(n),3))"
+"0",""
+"0","data_2022 <- data_2022 |> dplyr::filter(basis_of_record == ""HUMAN_OBSERVATION"")"
+"0","data_2022 <- data_2022 |> dplyr::select(-dplyr::any_of(""basis_of_record""))"

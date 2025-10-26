@@ -1,0 +1,26 @@
+"0","glimpse(data_raw)"
+"1","Rows: 11,619,897"
+"1",""
+"1","
+"
+"1","Columns: 14"
+"1",""
+"1","
+"
+"1","$ year             [3m[38;5;246m<dbl>[39m[23m 1900[38;5;246m, [39m1900[38;5;246m, [39m1900[38;5;246m, [39m1900[38;5;246m, [39m1900[38;5;246m, [39m1900[38;5;246m, [39m1900[38;5;246m, [39m1900[38;5;246m, [39m1900[38;5;246m, [39m1900[38;5;246m, [39m1900[38;5;246m, [39m…
+$ basisOfRecord    [3m[38;5;246m<chr>[39m[23m ""HUMAN_OBSERVATION""[38;5;246m, [39m""HUMAN_OBSERVATION""[38;5;246m, [39m""HUMAN_OBSERVATION""[38;5;246m, [39m""HU…
+$ stateTerritory   [3m[38;5;246m<chr>[39m[23m ""Australian Capital Territory""[38;5;246m, [39m""Australian Capital Territory""[38;5;246m, [39m""A…
+$ ibraRegion       [3m[38;5;246m<chr>[39m[23m ""South Eastern Highlands""[38;5;246m, [39m""South Eastern Highlands""[38;5;246m, [39m""South Easte…
+$ imcraRegion      [3m[38;5;246m<chr>[39m[23m [31mNA[39m[38;5;246m, [39m[31mNA[39m[38;5;246m, [39m[31mNA[39m[38;5;246m, [39m[31mNA[39m[38;5;246m, [39m[31mNA[39m[38;5;246m, [39m[31mNA[39m[38;5;246m, [39m[31mNA[39m[38;5;246m, [39m[31mNA[39m[38;5;246m, [39m[31mNA[39m[38;5;246m, [39m[31mNA[39m[38;5;246m, [39m[31mNA[39m[38;5;246m, [39m[31mNA[39m[38;5;246m, [39m[31mNA[39m[38;5;246m, [39m[31mNA[39m[38;5;246m, [39m[31mNA[39m[38;5;246m, [39m[31mNA[39m[38;5;246m, [39m[31mNA[39m…
+$ forest2018Status [3m[38;5;246m<chr>[39m[23m ""non-forest""[38;5;246m, [39m""non-forest""[38;5;246m, [39m""non-forest""[38;5;246m, [39m""non-forest""[38;5;246m, [39m""forest""[38;5;246m, [39m…
+$ forest2013Status [3m[38;5;246m<chr>[39m[23m ""non-forest""[38;5;246m, [39m""non-forest""[38;5;246m, [39m""non-forest""[38;5;246m, [39m""non-forest""[38;5;246m, [39m""forest""[38;5;246m, [39m…
+$ capadStatus      [3m[38;5;246m<chr>[39m[23m ""not protected""[38;5;246m, [39m""not protected""[38;5;246m, [39m""not protected""[38;5;246m, [39m""not protected""…
+$ epbcStatus       [3m[38;5;246m<chr>[39m[23m ""Not listed""[38;5;246m, [39m""Not listed""[38;5;246m, [39m""Not listed""[38;5;246m, [39m""Not listed""[38;5;246m, [39m""Criticall…
+$ griisStatus      [3m[38;5;246m<chr>[39m[23m ""Native""[38;5;246m, [39m""Native""[38;5;246m, [39m""Native""[38;5;246m, [39m""Native""[38;5;246m, [39m""Native""[38;5;246m, [39m""Native""[38;5;246m, [39m""Nativ…
+$ speciesID        [3m[38;5;246m<chr>[39m[23m ""https://biodiversity.org.au/afd/taxa/5254fe03-630b-44b2-9233-df51…
+$ speciesName      [3m[38;5;246m<chr>[39m[23m ""Pardalotus punctatus""[38;5;246m, [39m""Spilopelia chinensis""[38;5;246m, [39m""Psephotus haemato…
+$ occurrenceCount  [3m[38;5;246m<dbl>[39m[23m 1[38;5;246m, [39m1[38;5;246m, [39m1[38;5;246m, [39m1[38;5;246m, [39m3[38;5;246m, [39m1[38;5;246m, [39m1[38;5;246m, [39m1[38;5;246m, [39m1[38;5;246m, [39m1[38;5;246m, [39m1[38;5;246m, [39m1[38;5;246m, [39m1[38;5;246m, [39m1[38;5;246m, [39m1[38;5;246m, [39m1[38;5;246m, [39m1[38;5;246m, [39m1[38;5;246m, [39m1[38;5;246m, [39m1[38;5;246m, [39m1[38;5;246m, [39m1[38;5;246m, [39m…
+$ taxonomic_group  [3m[38;5;246m<chr>[39m[23m ""fish""[38;5;246m, [39m""mammal""[38;5;246m, [39m""bird""[38;5;246m, [39m""fish""[38;5;246m, [39m""fish""[38;5;246m, [39m""bird""[38;5;246m, [39m""mammal""[38;5;246m, [39m""plant…"
+"1",""
+"1","
+"

@@ -1,0 +1,701 @@
+---
+title: "SpeciesGroup"
+output: html_document
+---
+
+
+```{r}
+       
+library(tidyr)
+library(dplyr)
+library(tidyverse)
+library(caret)
+library(e1071)
+library(rpart)
+library(rpart.plot)
+library(ggplot2)
+library(here)
+library(doParallel)
+library(parallel)
+library(DALEX)
+library(recipes)
+library(scales)
+library(patchwork)
+library(sf)
+library(ozmaps)
+```
+
+# 1. Problem Definition
+
+## Research Question
+
+Our group sought to answer the question : Can we accurately classify the taxonomic “group”, such as mammal, bird, reptile, or plant, of a species occurrence using environmental predictors recorded in the Australian biodiversity dataset (1900-2022)?
+The dataset, which was published by CSIRO, contains extensive data of species occurrence records across Australia. Each observation contains metadata, such as the year of observation, geographic information, region, and also observer collection information. Our goal is to use these predictors to provide a rich foundation to create a classification prediction model of the observed species into their correct taxonomic groups.
+
+## Why is this problem considered a classification problem?
+The research problem can be considered a multi-classification problem. The target variable is the feature-engineered taxonomic “group,” which is categorical, and the aim is to be able to predict this group given a set of features. Since each occurrence must belong to exactly one group, the model must be able to assign the most probable class label from the fixed set of categories. In other words, our problem is quite different from a traditional binary classification problem, and it ensures that algorithms such as decision trees and random forests can be used to optimize the accuracy of our model.
+
+## Why does it matter?
+This project was chosen with the primary focus of targeting something critical and relevant to the Australian environment. We wanted to achieve this because of our understanding that Australia is a global biodiversity hotspot and is home to countless species that are endangered or nearly extinct! At the same time, Australia also faces severe ecological pressure, such as habitat loss, climate change, and invasive species. A model that can reliably classify records into easy-to-understand groups matters for a few particular reasons. Firstly, the ccurate predictions would be able to reinforce the current monitoring capabilities, allowing scientists to selectively interrogate chosen areas for important monitoring, secondly, universities who have initiatives that depend on high-quality taxonomic labeling to support ecological search would find such a model pivotal.
+
+Overall, we wanted to create a solution that would allow our research of the multi-classification problem to be both statistically and scientifically rigorous and would have an impact on society. We leverage modern data science to enhance the monitoring tactics, connecting a nationally backed dataset to the urgent and pivotal environmental challenges that both Sydney and Australia face.
+
+
+# 2. Data Description
+
+Aggregated Australian Species Occurrences 1900–2022 dataset, published by CSIRO, and harmonized with contributions from the Atlas of Living Australia, IMOS, and TERN—not just a hosting platform.
+
+Data source: https://data.csiro.au/collection/csiro%3A60456v1
+```{r}
+data_raw <-read_csv(here("AggregatedData_AustralianSpeciesOccurrences_1.1.2023-06-13.csv"))
+
+```
+
+## 2.1 The structure of the data
+This dataset contains 11,619,897 rows and 14 variables. The analysis reveals that the dataset contains two “numeric” columns. The remaining twelve are all categorical data.
+```{r}
+dim(data_raw)
+```
+## 2.2 Details about each column
+
+1. year - Year of occurrence 
+2. basisOfRecord - Basis of record (specimen, human observation, etc.)
+3. stateTerritory - State/Territory
+4. ibraRegion - IBRA7 terrestrial region
+5. imcraRegion - IMCRA 4.0 mesoscale marine bioregion
+6. forest2018Status - Status of location in Forests of Australia (2018)
+7. forest2013Status - Status of location in Forests of Australia (2013)
+8. capadStatus - Status of location in CAPAD 2020
+9. epbcStatus - Status of species on EPBC Act List of Threatened Species
+10.griisStatus - Status of species on Global Register of Introduced and Invasive Species – Australia (GRIIS) version 1.6
+11. speciesID - ALA species identifier
+12. speciesName - Scientific name for species
+13. occurrenceCount - Count of occurrence records matching the values for elements.
+14. taxonomicGroup - Taxonomic classification
+```{r}
+glimpse(data_raw)
+
+```
+
+
+The analysis confirms that the speciesID and speciesName columns are highly similar, containing over 110,000 unique entries each. The remaining variables are highly categorical with a low number of unique values. For example, year has only 123 unique years, while stateTerritory has just 11 and taxonomic_group's 12. Other columns like epbcStatus, griisStatus, and forest2013Status are clearly defined categories with 7, 3, and 2 unique levels respectively.The output also includes “a column with examples. Columns like forestStatus just have two value,”non-forest” and “forest”. GriisStatus contains “Native”, “Introduced” and “Invasive”.
+
+```{r}
+#Using this fucntion we can see each columns unique values
+sapply(data_raw, function(x) length(unique(x)))
+```
+
+## 2.3 Summary
+In summary, the dataset has different categorical and numeric data, with large size. For better operations later and convenience, we decide to use the data whose year is 2022. The extracted data size is also large enough, about 300k data. We will select numeric and categorical data to build model to predict *"taxonomic_group"*, the target value.
+In addition, as shown above, there are some challenges for us to do.
+First, the missing value. Missing value is a popular issue in data analysis. How to deal with it is important, removing or filling in with median, mode or mean values, and others. Because it will affect accuracy of model.
+Second, invalide value and outliers. In dataset, numeric data like year and occuranceCount is crucial factor. As we use data from year 2022, occuranceCount is an influencial factor. If there are any outliers or invalid value, removing these data or replacing with median, mode or mean value is key.
+
+
+```{r}
+data_summary <- tibble(
+  Variable = names(data_raw),
+  Type = sapply(data_raw, class),
+  Missing_Count = colSums(is.na(data_raw)),
+  Missing_Pct = round(colMeans(is.na(data_raw)) * 100, 2),
+  Unique_Values = sapply(data_raw, function(x) length(unique(x))),
+  Min = sapply(data_raw, function(x) if(is.numeric(x)) min(x, na.rm = TRUE) else NA),
+  Max = sapply(data_raw, function(x) if(is.numeric(x)) max(x, na.rm = TRUE) else NA),
+  Mean = sapply(data_raw, function(x) if(is.numeric(x)) mean(x, na.rm = TRUE) else NA),
+)
+```
+
+
+# 3.Data Cleaning
+The original dataset contained 11,619,897 records. Following internal discussion and tutor guidance, we restricted the scope to the most recent year (2022) to ensure a manageable and timely analysis. After filtering to 2022, 302,344 records remained.
+
+## 3.1 Standardise column names (lower_snake_case)
+To improve readability and avoid bugs caused by spaces, punctuation, and mixed case, we standardised all column names to a consistent lower_snake_case format.
+
+
+```{r}
+# Take only data from 2022
+data_2022 <- data_raw |> dplyr::filter(!is.na(year) & year > 2021 & year <= 2022) 
+
+# Standartize the column names 
+to_snake <- function(x) {
+  x <- gsub("\\.", "_", x)
+  x <- gsub("([a-z0-9])([A-Z])", "\\1_\\2", x)  
+  x <- gsub("[^A-Za-z0-9_]", "_", x)
+  x <- gsub("_+", "_", x)
+  tolower(trimws(x))
+}
+names(data_2022) <- to_snake(names(data_2022))
+```
+
+## 3.2 Miss report
+To quantify missingness, we computed the percentage of missing values for every column. The highest rate is in imcra_region (92.54%), followed by ibra_region (7.23%) and state_territory (6.13%). Given this extreme sparsity, we excluded imcra_region from modelling. To impute missing values in ibra_region and state_territory, we first checked cross-field consistency and found records where ibra_region was populated but state_territory was missing. We identified 38 distinct ibra_region values without states, built an IBRA→state lookup table, and filled state_territory accordingly. This targeted imputation reduced state_territory missingness from 6.13% to 3.64%.
+
+
+
+```{r}
+# Miss report 
+miss_tbl <- data_2022 |>
+  summarise(across(everything(), ~ mean(is.na(.)) * 100)) |>
+  pivot_longer(everything(), names_to = "variable", values_to = "pct_missing") |>
+  arrange(desc(pct_missing))
+
+# Distinct IBRA regions when state_territory is NA
+ibra_when_state_na <- data_2022 |>
+  dplyr::filter(is.na(state_territory) & !is.na(ibra_region)) |>
+  dplyr::distinct(ibra_region) |>
+  dplyr::arrange(ibra_region)
+
+
+# Build a lookup table
+ibra_to_state <- tibble::tribble(
+  ~ibra_region, ~state_from_ibra,
+  "Arnhem Coast","Northern Territory",
+  "Brigalow Belt North","Queensland",
+  "Cape York Peninsula","Queensland",
+  "Carnarvon","Western Australia",
+  "Central Mackay Coast","Queensland",
+  "Dampierland","Western Australia",
+  "Darwin Coastal","Northern Territory",
+  "Esperance Plains","Western Australia",
+  "Eyre Yorke Block","South Australia",
+  "Flinders Lofty Block","South Australia",
+  "Furneaux","Tasmania",
+  "Gawler","South Australia",
+  "Geraldton Sandplains","Western Australia",
+  "Gulf Coastal","Northern Territory",
+  "Indian Tropical Islands","External Territories",
+  "Jarrah Forest","Western Australia",
+  "Kanmantoo","South Australia",
+  "King","Tasmania",
+  "Murray Darling Depression","South Australia; New South Wales; Victoria",
+  "NSW North Coast","New South Wales",
+  "Naracoorte Coastal Plain","South Australia; Victoria",
+  "Northern Kimberley","Western Australia",
+  "Pacific Subtropical Islands","New South Wales; External Territory",
+  "Pilbara","Western Australia",
+  "South East Coastal Plain","Victoria",
+  "South East Corner","New South Wales; Victoria",
+  "South Eastern Highlands","New South Wales; Australian Capital Territory; Victoria",
+  "South Eastern Queensland","Queensland; New South Wales",
+  "Southern Volcanic Plain","Victoria; South Australia",
+  "Subantarctic Islands","Tasmania",
+  "Swan Coastal Plain","Western Australia",
+  "Sydney Basin","New South Wales",
+  "Tasmanian Northern Slopes","Tasmania",
+  "Tasmanian South East","Tasmania",
+  "Tasmanian Southern Ranges","Tasmania",
+  "Tasmanian West","Tasmania",
+  "Warren","Western Australia",
+  "Wet Tropics","Queensland"
+)
+
+# Impute state_territory where missing
+data_2022 <- data_2022 |>
+  dplyr::left_join(ibra_to_state, by = "ibra_region") |>
+  dplyr::mutate(
+    state_territory = dplyr::coalesce(state_territory, state_from_ibra)
+  ) |>
+  dplyr::select(-state_from_ibra)
+```
+
+
+## 3.3 Drop unnecessary columns
+basis_of_record: Approximately 98% of records are HUMAN_OBSERVATION. We removed all rows with other values; since the remaining entries were uniform, we dropped the column as non-informative.
+
+year: The dataset was restricted to 2022 only. With no variation left, we dropped the column.
+
+imcra_region: Due to extreme missingness, we excluded this column from further analysis.
+
+
+
+```{r}
+#Drop the imcra and year columns
+data_2022 <- data_2022 |> dplyr::select(-dplyr::any_of(c("year", "imcra_region")))
+
+# 98% Human observation and drop the basis_of_record column
+dist_basis <- data_2022 |>dplyr::count(basis_of_record, sort = TRUE) |> dplyr::mutate(prop = round(n / sum(n),3))
+
+data_2022 <- data_2022 |> dplyr::filter(basis_of_record == "HUMAN_OBSERVATION")
+data_2022 <- data_2022 |> dplyr::select(-dplyr::any_of("basis_of_record"))
+```
+
+## 3.4 Drop unnecessary rows
+We identified 684 records with occurrence_count > 100 and treated these as outliers, removing them from the analysis. Afterward, we dropped all duplicate rows to ensure a clean, non-redundant dataset.
+To enforce a one-to-one mapping between species_name and species_id, we audited the data and found 8 species names associated with multiple IDs. We dropped these conflicting records to remove ambiguity and ensure consistency for downstream analysis.
+
+```{r}
+# More that 100 occurance we consider them as a outliers, drop the rows
+  #data_2022 |> dplyr::summarise(n_over_100 = sum(occurrence_count > 100, na.rm = TRUE), prop_over_100 =            mean(occurrence_count > 100, na.rm = TRUE))
+
+      #Output
+      #n_over_100 prop_over_100
+      #684        0.00229916    
+
+data_2022 <- data_2022 |> dplyr::filter(occurrence_count <= 100)  
+  #nrow(data_2022)
+
+    #Output
+    #296816
+
+# Drop the duplicate rows
+data_2022 <- data_2022 |> distinct()
+  #nrow(data_2022)
+
+    #Output
+    #293063
+
+# Species names with >1 distinct species_id
+names_many_ids <- data_2022 |>
+  group_by(species_name) |>
+  summarise(n_distinct_ids = n_distinct(species_id, na.rm = TRUE), .groups = "drop") |>
+  filter(!is.na(species_name), n_distinct_ids > 1)
+
+# Drop those rows from data2
+data_2022 <- data_2022 |>
+  anti_join(names_many_ids |> select(species_name), by = "species_name")
+
+summary_after <- tibble(
+  rows_after      = nrow(data_2022),
+  names_dropped_n = nrow(names_many_ids)
+)
+  #summary_after
+
+    #Output
+    #rows_after names_dropped_n
+    #292865    8    
+
+# write.csv(data_2022, "cleaned.csv", row.names = FALSE)
+```
+
+Overall, from the original dataset, restricting to 2022 reduced the size by ~97.5% (from 11,619,897 to 302,344 rows). Within the 2022 subset, subsequent cleaning steps (targeted imputations, removing non-HUMAN_OBSERVATION records, outliers >100, duplicates, and conflicting species IDs) removed a further 3.13% of rows (9,480). The resulting table is tidy, consistent, and ready for EDA and modelling.
+
+
+# 4. Data exploration and visualization
+
+```{r}
+## ---- cleaned ----
+d1 <- data_2022
+d1$state_territory[is.na(d1$state_territory) | d1$state_territory==""] <- "Unknown"
+d1$state_territory[grepl(";", d1$state_territory)] <- "Multiple states"
+c1 <- aggregate(occurrence_count ~ state_territory, d1, sum, na.rm=TRUE)
+c1 <- c1[order(c1$occurrence_count, decreasing=TRUE), ]
+bk1 <- pretty(c1$occurrence_count, n = 6)
+
+p1 <- ggplot(c1, aes(reorder(state_territory, occurrence_count), occurrence_count)) +
+  geom_col(fill="lightblue", color="grey30", width=.75) +
+  coord_flip() +
+  scale_y_continuous(breaks = bk1, labels = label_comma(),
+                     expand = expansion(mult = c(0, .05))) +
+  labs(title="Clean dataset", x=NULL, y="Total occurrences") +
+  theme(panel.grid.major.y = element_blank())
+
+## ---- original ----
+d2 <- data_2022
+d2$state_territory[is.na(d2$state_territory) | d2$state_territory==""] <- "Unknown"
+d2$state_territory[grepl(";", d2$state_territory)] <- "Multiple states"
+c2 <- aggregate(occurrence_count ~ state_territory, d2, sum, na.rm=TRUE)
+c2 <- c2[order(c2$occurrence_count, decreasing=TRUE), ]
+bk2 <- pretty(c2$occurrence_count, n = 6)
+
+p2 <- ggplot(c2, aes(reorder(state_territory, occurrence_count), occurrence_count)) +
+  geom_col(fill="maroon", color="grey30", width=.75) +
+  coord_flip() +
+  scale_y_continuous(breaks = bk2, labels = label_comma(),
+                     expand = expansion(mult = c(0, .05))) +
+  labs(title="Original Dataset", x=NULL, y="Total occurrences") +
+  theme(panel.grid.major.y = element_blank())
+
+## ---- side-by-side in one box ----
+(p1 | p2) +
+  plot_annotation(theme = theme(
+    plot.background = element_rect(color="grey60", fill=NA, linewidth=.8),
+    plot.margin = margin(10,10,10,10)
+  ))&
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+```
+The graphs show that the highest number of records is located in New South Wales, the next level has Victoria and Queensland then the middle position is held by South Australia and Western Australia, but the Australian Capital Territory, Tasmania and the Northern Territory hold much lower positions. Once data are cleaned up, however, total counts are significantly reduced, which supposes that false or duplicate records are eliminated. Moreover, categories described as Unknown and Multiple states become smaller after cleaning, which represents the better standardisation of the labels. In short, there has been no shift in the relative ranking system of states implying that the spatial pattern is sound. It should be noted however that the counts must primarily be a reflection of observer effort and population size, and not biodiversity, per se; normalisation by area or effort should actually be taken into account.
+
+```{r}
+dat <- data_2022
+dat$ibra_region[is.na(dat$ibra_region) | dat$ibra_region == ""] <- "Unknown"
+
+# Sum occurrences per region
+reg_counts <- aggregate(occurrence_count ~ ibra_region, data = dat, sum, na.rm = TRUE)
+reg_counts <- reg_counts[order(reg_counts$occurrence_count, decreasing = TRUE), ]
+
+# Keep Top-10 and group the rest as "Other"
+top_n <- 10
+n <- nrow(reg_counts)
+top_df <- reg_counts[seq_len(min(top_n, n)), ]
+other_sum <- if (n > top_n) sum(reg_counts$occurrence_count[(top_n + 1):n]) else 0
+plot_df <- if (n > top_n) rbind(top_df, data.frame(ibra_region = "Other",
+                                                   occurrence_count = other_sum)) else top_df
+
+# Percent labels
+plot_df$pct <- plot_df$occurrence_count / sum(plot_df$occurrence_count)
+plot_df$label <- paste0(sprintf("%.1f", plot_df$pct * 100), "%")
+
+# Order slices largest -> smallest
+plot_df$ibra_region <- factor(plot_df$ibra_region,
+                              levels = plot_df$ibra_region[order(plot_df$occurrence_count, decreasing = TRUE)])
+
+# Donut pie
+ggplot(plot_df, aes(x = 2, y = occurrence_count, fill = ibra_region)) +
+  geom_col(color = "white") +
+  coord_polar(theta = "y") +
+  xlim(0.5, 2.5) +  # hole
+  geom_text(aes(label = label), position = position_stack(vjust = 0.5), size = 3) +
+  labs(title = "IBRA regions - share of total occurrences (cleaned data)",
+       subtitle = "Top 10 regions shown. Others grouped as 'Other'",
+       fill = "IBRA region") +
+  theme_void(base_size = 12)
+
+```
+The graph shows that the records are concentrated in few eastern IBRA regions: South Eastern Queensland (16.3 percent), Sydney Basin (13.4 percent) and South Eastern Highlands (11.3 percent) and little percentage is seen in the South East Coastal Plain (6.9 percent), NSW North Coast (4.3 percent), Flinders Lofty Block (3.7 percent), Victoria Midlands (3.3 percent), NSW South Western Slopes (2.9 percent), and Wet Tropics (2.6 percent) regions. It is also found in the graph that the significant long tail of other regions adds up to 30.5⠽ percent, and it is still that its Unknown category adds up to 5.0 percent, hence, disclosing unfinished location identities.
+
+```{r}
+# If needed once: install.packages(c("sf","ozmaps","ggplot2"))
+
+#library(ggplot2)
+# 1) Clean + aggregate your data
+dat <- data_2022
+dat$state_territory <- trimws(dat$state_territory)
+dat$state_territory[is.na(dat$state_territory) | dat$state_territory == ""] <- "Unknown"
+dat$state_territory[tolower(dat$state_territory) %in% c("unknown1","unknown 1","unknown")] <- "Unknown"
+
+agg <- aggregate(occurrence_count ~ state_territory, data = dat, sum, na.rm = TRUE)
+
+# keep only real AU states/territories for mapping
+keep <- c("New South Wales","Victoria","Queensland","South Australia",
+          "Western Australia","Tasmania","Northern Territory",
+          "Australian Capital Territory")
+agg <- subset(agg, state_territory %in% keep)
+
+# 2) Get state polygons and join totals
+states <- ozmaps::ozmap_data("states")   # has a NAME column with state names
+plot_sf <- merge(states, agg, by.x = "NAME", by.y = "state_territory", all.x = TRUE, sort = FALSE)
+plot_sf$occurrence_count[is.na(plot_sf$occurrence_count)] <- 0
+
+# 3) Choropleth (heat map)
+options(scipen = 999)
+ggplot(plot_sf) +
+  geom_sf(aes(fill = occurrence_count), color = "white", linewidth = 0.25) +
+  scale_fill_gradient(
+    name = "Occurrences",
+    low = "#e6f2ff", high = "#084594",
+    labels = function(x) prettyNum(x, big.mark = ",", scientific = FALSE)
+    # If values are very skewed, use log colour scale instead:
+    # , trans = "log10", name = "Occurrences (log)"
+  ) +
+  coord_sf(xlim = c(112, 154), ylim = c(-44, -10), expand = FALSE) +
+  labs(title = "Total occurrences by State/Territory (cleaned data)", x = NULL, y = NULL) +
+  theme_void(base_size = 12) +
+  theme(legend.position = "right")
+```
+The map shows that the total number of occurrences is most in New South Wales (shown in the darkest shade), followed by high in Queensland and Victoria, and moderate in South Africa and the Western regions, with a low in the Northern Territory and Tasmania. The map also shows that there is an east-coast concentration with less recording in low density inland and northern locations-an effect that probably represents tour energy as much as true distribution.
+
+
+
+# 5. Modelling Plan
+To answer our research question, we chose out of five models. Each of the models was chosen because of its methodological advantages, not only the relevance to our data.
+1. Multi-Nomial Logistic Regression (MLR)
+MLR is based on a more fundamental approach, which allows quantifying the associations between predictors, geographic area, time frame and ecological setting and the likelihood of one observation being a member of a particular taxonomic group. Though the technique is relatively simple, interpretable coefficients are obtained and this helps to understand the strongest predictors.
+2. Linear Discriminant Analysis (LDA)
+LDA determines the linear boundaries between classes and enables analysis on whether geographical and environmental variables can be able to effectively distinguish taxonomic groups, that is, mammals, birds, reptiles and plants. Nevertheless, assumptions of normality and homoscedasticity not withstanding, LDA is a good yardstick against which more complex procedures can be compared.
+3. k-Nearest Neighbours (kNN)
+The kNN algorithm uses the proximity of observations to the closest records in the feature space to classify observations. This is a non-parametric method, which is based on local ecological similarity, such as classifying observations to be identical to other nearby occurrences or records or classifying them by time. KNN can be used in place of parametric models due to the weak requirements it makes on underlying data structure.
+4. Support Vector Machines (SVM)
+The non-linear and high-dimensional boundaries of the decision are enabled by kernel functions to fit SVMs. This is the feature that is specifically relevant to the current dataset where categorical predictors are extended into a lot of indicator variables and ecological groups might not be linearly separable.
+5. Decision Trees
+Decision trees offer clear rule based designs. The approach supports categorical variables and interactions by default and the feature-importance values of the most influential predictors are obtained.
+
+5.1 Evaluation Plan
+Data Splitting: The dataset will be split into 70% training set and 30% testing set, where stratified sampling will be adopted to keep the proportion of taxonomic groups.
+Cross-validation: 10-fold cross-validation is performed to give a good performance estimate as well as to tune the hyperparameters (number of neighbors to use in kNN and which kernel to use in SVM).
+Metrics:Evaluation is based on macro-averaged recall, precision and F1-score, thus assigning the same importance to each taxonomic group irrespective of prevalence. Contextual performance is given by overall accuracy and confusion matrices and linear versus non-linear separability is given by ROC curves and the area under curve (AUC) in a one-vs-rest paradigm.
+Model Comparison: There is a training and validation of the five models on the same data partitions. The macro-F1 score is the main measurement to compare the results against, secondary measurements such as accuracy, precision, recall and AUC are also given to have a complete picture of the performance.
+This can be corrected by implementing class Imbalance strategies like resampling or weighting classes in the circumstance of substantial imbalance between the classes to reduce bias contribution to majority taxa.
+Interpretability: Interpretability is another role much like measurability in non-quantitative performance. Decision trees provide direct decision rules, whereas the coefficients of these MLR provide clear information with regard to the importance of predictors, which means that the findings received can be directly utilized in conservation and ecological management.
+
+# 6. Models
+```{r load-data, message = FALSE}
+# set seed for reproducibility
+set.seed(123)
+
+data_clean_full <- read.csv("new_clean_dataset.csv") %>%
+  select(-species_id, -species_name, -occurrence_count, -forest2013_status, ) %>%
+  na.omit()
+
+set.seed(123)
+sample_size <- min(50000, nrow(data_clean_full))
+
+data_sample_index <- createDataPartition(
+  data_clean_full$Type,
+  p = sample_size / nrow(data_clean_full),
+  list = FALSE
+)
+
+data_clean <- data_clean_full[data_sample_index, ] %>% mutate_if(is.character, as.factor)
+
+sapply(data_clean, function(x) length(unique(x)))
+```
+
+```{r}
+set.seed(123)
+
+# split train and test set
+trainIndex <- createDataPartition(data_clean$Type,
+  p = 0.7,
+  list = FALSE, times = 1
+)
+train_data <- data_clean[trainIndex, ]
+test_data <- data_clean[-trainIndex, ]
+```
+
+## Feature engineering
+```{r}
+# 4. High Cardinality Variables: Frequency Encoding
+# -- Based *only* on training set statistics to prevent data leakage
+# Calculate frequencies
+state_freq <- prop.table(table(train_data$state_territory))
+ibra_freq <- prop.table(table(train_data$ibra_region))
+
+# Safe mapping function (handles categories unseen in the test set)
+map_freq_safe <- function(x, freq_table) {
+  x_char <- as.character(x)
+  mapped <- ifelse(x_char %in% names(freq_table),
+    freq_table[x_char],
+    min(freq_table, na.rm = TRUE)
+  ) # Fill unseen categories with the minimum frequency
+  as.numeric(mapped)
+}
+
+# Apply Frequency Encoding
+train_data$state_territory_freq <- map_freq_safe(train_data$state_territory, state_freq)
+train_data$ibra_region_freq <- map_freq_safe(train_data$ibra_region, ibra_freq)
+
+test_data$state_territory_freq <- map_freq_safe(test_data$state_territory, state_freq)
+test_data$ibra_region_freq <- map_freq_safe(test_data$ibra_region, ibra_freq)
+
+# Remove original high cardinality factor columns
+train_data <- train_data %>% select(-state_territory, -ibra_region)
+test_data <- test_data %>% select(-state_territory, -ibra_region)
+```
+
+
+```{r}
+# 5. Other Low Cardinality Categorical Variables: One-Hot Encoding
+# Use 'recipes' for consistent processing (ensuring train/test consistency)
+rec <- recipe(Type ~ ., data = train_data) %>%
+  step_center(all_numeric_predictors()) %>%
+  step_scale(all_numeric_predictors()) %>%
+  step_dummy(all_nominal_predictors(), -all_outcomes(), one_hot = TRUE)
+
+# Apply preprocessing
+prep_rec <- prep(rec, training = train_data)
+train_data <- bake(prep_rec, new_data = train_data)
+test_data <- bake(prep_rec, new_data = test_data)
+```
+
+
+```{r}
+table(train_data$Type)
+```
+
+
+## cross-validation and training controls
+```{r}
+# parallel computation, increase speed
+cl <- makeCluster(detectCores() - 1)
+registerDoParallel(cl)
+clusterSetRNGStream(cl, 5003)
+
+cv_folds <- createMultiFolds(train_data$Type, k = 5, times = 3)
+
+train_control <- trainControl(
+  method = "repeatedcv",
+  index = cv_folds,
+  classProbs = TRUE,
+  summaryFunction = multiClassSummary,
+  savePredictions = "final",
+  allowParallel = TRUE,
+  verboseIter = TRUE,
+  trim = TRUE,
+  # sampling = "smote"
+)
+
+# evaluation metric
+metric <- "Kappa"
+```
+
+## Decision Tree
+```{r}
+# hyperparameter grid for decision tree
+dt_grid <- expand.grid(
+  cp = 10^seq(-5, -1, length.out = 20)
+)
+start_time_dt <- Sys.time()
+# cat("Training Decision Tree...\n")
+set.seed(123)
+dt_model <- train(
+  Type ~ .,
+  data = train_data,
+  method = "rpart",
+  trControl = train_control,
+  tuneGrid = dt_grid,
+  metric = metric
+)
+
+total_time_dt <- difftime(Sys.time(), start_time_dt, units = "mins")
+```
+
+## SVM
+```{r}
+# hyperparameter grid for SVM（Radial Basis Function kernel
+start_time_svm <- Sys.time()
+
+# linear
+svm_grid_linear <- expand.grid(
+  cost = c(0.01, 0.1, 1)
+)
+# cat("Training SVM linear...\n")
+set.seed(123)
+svm_model <- train(
+  Type ~ .,
+  data = train_data,
+  method = "svmLinear2",
+  trControl = train_control,
+  tuneGrid = svm_grid_linear,
+  metric = metric
+)
+
+best_cost <- svm_model$bestTune$cost
+
+# 在最佳参数周围构建精细网格
+svm_grid_fine <- expand.grid(
+  cost = c(best_cost * 0.5, best_cost, best_cost * 2)
+)
+
+set.seed(123)
+svm_model <- train(
+  Type ~ .,
+  data = train_data,
+  method = "svmLinear2",
+  trControl = train_control,
+  tuneGrid = svm_grid_fine,
+  metric = metric
+)
+
+total_time_svm <- difftime(Sys.time(), start_time_svm, units = "mins")
+```
+
+
+## evaluation of models
+```{r}
+# 1. Extract cross-validation results
+dt_cv_results <- dt_model$results %>%
+  filter(cp == dt_model$bestTune$cp) %>%
+  select(Kappa, Accuracy, Mean_F1, Mean_Sensitivity, Mean_Specificity)
+
+svm_cv_results <- svm_model$results %>%
+  filter(cost == svm_model$bestTune$cost) %>%
+  select(Kappa, Accuracy, Mean_F1, Mean_Sensitivity, Mean_Specificity)
+
+# 2. Test set predictions
+dt_pred <- predict(dt_model, newdata = test_data)
+svm_pred <- predict(svm_model, newdata = test_data)
+
+# 3. Test set performance
+dt_test_perf <- confusionMatrix(dt_pred, test_data$Type)
+svm_test_perf <- confusionMatrix(svm_pred, test_data$Type)
+
+# 4. Compile comparison table
+model_comparison <- data.frame(
+  Model = c("Decision Tree", "SVM (Linear)"),
+
+  # Cross-validation metrics
+  CV_Kappa = c(dt_cv_results$Kappa, svm_cv_results$Kappa),
+  CV_Accuracy = c(dt_cv_results$Accuracy, svm_cv_results$Accuracy),
+  CV_F1 = c(dt_cv_results$Mean_F1, svm_cv_results$Mean_F1),
+
+  # Test set metrics
+  Test_Kappa = c(
+    dt_test_perf$overall["Kappa"],
+    svm_test_perf$overall["Kappa"]
+  ),
+  Test_Accuracy = c(
+    dt_test_perf$overall["Accuracy"],
+    svm_test_perf$overall["Accuracy"]
+  ),
+
+  # Best hyperparameters
+  Best_Param = c(
+    paste0("cp = ", round(dt_model$bestTune$cp, 4)),
+    paste0("cost = ", svm_model$bestTune$cost)
+  ),
+
+  # Training time
+  Time_mins = c(as.numeric(total_time_dt), as.numeric(total_time_svm))
+)
+
+# Round numeric columns
+model_comparison[, 2:6] <- round(model_comparison[, 2:6], 4)
+model_comparison$Time_mins <- round(model_comparison$Time_mins, 2)
+
+print(model_comparison)
+```
+
+
+```{r}
+# Prepare data for plotting
+perf_long <- model_comparison %>%
+  select(Model, CV_Kappa, CV_Accuracy, Test_Kappa, Test_Accuracy) %>%
+  pivot_longer(cols = -Model, names_to = "Metric", values_to = "Value")
+
+ggplot(perf_long, aes(x = Metric, y = Value, fill = Model)) +
+  geom_bar(stat = "identity", position = "dodge", width = 0.7) +
+  geom_text(aes(label = round(Value, 3)),
+    position = position_dodge(width = 0.7),
+    vjust = -0.5, size = 3
+  ) +
+  labs(
+    title = "Model Performance Comparison",
+    y = "Score", x = ""
+  ) +
+  theme_minimal() +
+  theme(legend.position = "top") +
+  scale_fill_brewer(palette = "Set2") +
+  ylim(0, 1)
+
+# 6. Summary statement
+cat("\n=== Model Selection Summary ===\n")
+best_model_idx <- which.max(model_comparison$Test_Kappa)
+best_model_name <- model_comparison$Model[best_model_idx]
+best_kappa <- model_comparison$Test_Kappa[best_model_idx]
+best_accuracy <- model_comparison$Test_Accuracy[best_model_idx]
+
+cat(sprintf("Best Model: %s\n", best_model_name))
+cat(sprintf("Test Kappa: %.4f | Test Accuracy: %.4f\n", best_kappa, best_accuracy))
+cat(sprintf("Training Time: %.2f minutes\n", model_comparison$Time_mins[best_model_idx]))
+```
+
+
+```{r}
+# k = 5, times = 3
+saveRDS(dt_model, "dt_model_50k_k5_times3.rds")
+saveRDS(svm_model, "svm_model_50k_k5_times3.rds")
+```
+
+```{r}
+# stop parallel computation
+stopCluster(cl)
+registerDoSEQ()
+```
+
+```{r}
+cat("end time:", format(Sys.time(), "%Y/%m/%d %I:%M:%S %p"), "\n")
+```
+
+
+

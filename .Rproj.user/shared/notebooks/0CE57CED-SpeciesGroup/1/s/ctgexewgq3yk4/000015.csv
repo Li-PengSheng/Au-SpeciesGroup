@@ -1,0 +1,20 @@
+"0",""
+"0","# 6. Summary statement"
+"0","cat(""\n=== Model Selection Summary ===\n"")"
+"1","
+=== Model Selection Summary ===
+"
+"0","best_model_idx <- which.max(model_comparison$Test_Kappa)"
+"0","best_model_name <- model_comparison$Model[best_model_idx]"
+"0","best_kappa <- model_comparison$Test_Kappa[best_model_idx]"
+"0","best_accuracy <- model_comparison$Test_Accuracy[best_model_idx]"
+"0",""
+"0","cat(sprintf(""Best Model: %s\n"", best_model_name))"
+"1","Best Model: Decision Tree
+"
+"0","cat(sprintf(""Test Kappa: %.4f | Test Accuracy: %.4f\n"", best_kappa, best_accuracy))"
+"1","Test Kappa: 0.1185 | Test Accuracy: 0.4800
+"
+"0","cat(sprintf(""Training Time: %.2f minutes\n"", model_comparison$Time_mins[best_model_idx]))"
+"1","Training Time: 0.58 minutes
+"
